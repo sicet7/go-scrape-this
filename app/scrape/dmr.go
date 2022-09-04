@@ -1,17 +1,21 @@
-package app
+package scrape
 
 import (
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"github.com/chromedp/chromedp"
 	"github.com/samber/lo"
-	"log"
 )
 
-//go:embed getData.js
-var script string
+//go:embed ScrapeVehicle.js
+var scrapeVehicleScript string
 
-func ScarpeVehicle(searchType string, value string) map[string]interface{} {
+func toBase64(b []byte) string {
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func ScrapeVehicle(searchType string, value string) (map[string]interface{}, error) {
 
 	ctx, cancel := chromedp.NewContext(context.Background())
 	defer cancel()
@@ -29,10 +33,10 @@ func ScarpeVehicle(searchType string, value string) map[string]interface{} {
 		chromedp.Submit("#searchForm"),
 		chromedp.WaitReady("#visKTTabset"),
 		chromedp.FullScreenshot(&image, 90),
-		chromedp.Evaluate(script, &res),
+		chromedp.Evaluate(scrapeVehicleScript, &res),
 	)
 	if err != nil {
-		log.Fatal(err)
+		return map[string]interface{}{}, err
 	}
 
 	output = res
@@ -45,15 +49,15 @@ func ScarpeVehicle(searchType string, value string) map[string]interface{} {
 		chromedp.Click("#li-visKTTabset-1 a"),
 		chromedp.WaitReady("#visKTTabset"),
 		chromedp.FullScreenshot(&image, 90),
-		chromedp.Evaluate(script, &res),
+		chromedp.Evaluate(scrapeVehicleScript, &res),
 	)
 
 	if err != nil {
-		log.Fatal(err)
+		return map[string]interface{}{}, err
 	}
 
 	output = lo.Assign(output, res)
 	output["technical_details_image"] = toBase64(image)
 
-	return output
+	return output, nil
 }

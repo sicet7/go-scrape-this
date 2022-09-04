@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"github.com/sicet7/go-scrape-this/app"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -29,7 +30,7 @@ func main() {
 	application.SetHttpServerAddress(addr)
 	application.SetShutdownWait(shutdownWait)
 
-	application.StartHttpServer()
+	application.Start()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -37,6 +38,9 @@ func main() {
 
 	<-c
 
-	application.StopHttpServer()
+	err := application.Stop()
+	if err != nil {
+		log.Fatalf("Application shutdown threw errors: %v\n", err)
+	}
 	os.Exit(0)
 }

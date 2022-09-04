@@ -57,7 +57,7 @@ func (a *application) Version() string {
 	return a.version
 }
 
-func (a *application) StartHttpServer() {
+func (a *application) Start() {
 	go func() {
 		if err := a.Server().ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			a.Logger().Fatal().Msgf("Failed to start application server: %v\n", err)
@@ -66,12 +66,14 @@ func (a *application) StartHttpServer() {
 	a.Logger().Info().Msg("HTTP server started.")
 }
 
-func (a *application) StopHttpServer() {
+func (a *application) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), a.shutdownWait)
 	defer cancel()
 	err := a.Server().Shutdown(ctx)
 	if err != nil {
-		panic(err)
+		a.Logger().Error().Msgf("Http server shutdown threw errors: %v\n", err)
+		return err
 	}
-	a.Logger().Info().Msg("HTTP server started.")
+	a.Logger().Info().Msg("HTTP server stopped.")
+	return nil
 }
