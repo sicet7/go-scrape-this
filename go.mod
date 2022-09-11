@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/chromedp/chromedp v0.8.5
+	github.com/google/uuid v1.3.0
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.0
 	github.com/rs/zerolog v1.15.0

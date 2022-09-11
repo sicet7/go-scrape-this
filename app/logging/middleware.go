@@ -1,8 +1,9 @@
-package middlewares
+package logging
 
 import (
 	"github.com/rs/zerolog"
 	"net/http"
+	"time"
 )
 
 type responseWrite struct {
@@ -29,16 +30,19 @@ func (r *responseWrite) Code() int {
 
 func LoggingMiddleware(next http.Handler, logger *zerolog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startTime := time.Now()
 		newWriter := responseWrite{internalWriter: w, code: 200}
 		next.ServeHTTP(&newWriter, r)
+		duration := time.Since(startTime)
 		logger.Info().
 			Str("host", r.Host).
 			Int("code", newWriter.Code()).
 			Str("user-agent", r.UserAgent()).
+			Int64("duration", duration.Milliseconds()).
 			Str("ip", r.RemoteAddr).
-			Int64("request-length", r.ContentLength).
+			Int64("content-length", r.ContentLength).
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
-			Send()
+			Msg(http.StatusText(newWriter.Code()))
 	})
 }

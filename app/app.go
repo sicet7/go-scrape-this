@@ -5,9 +5,8 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/sicet7/go-scrape-this/app/database"
-	"github.com/sicet7/go-scrape-this/app/middlewares"
+	"github.com/sicet7/go-scrape-this/app/logging"
 	goLog "log"
 	"net/http"
 	"os"
@@ -16,7 +15,7 @@ import (
 	"time"
 )
 
-var allowedContentTypes []string = []string{
+var allowedContentTypes = []string{
 	"application/json",
 }
 
@@ -34,7 +33,7 @@ func (h recoveryHandlerLogger) Println(v ...interface{}) {
 }
 
 type application struct {
-	logger       *zerolog.Logger
+	logger       *logging.LoggingHandler
 	mux          *mux.Router
 	server       *http.Server
 	db           *database.Database
@@ -65,26 +64,28 @@ func initMiddleware(a *application) {
 
 	h = handlers.CompressHandler(h)
 
-	h = middlewares.LoggingMiddleware(h, a.Logger())
+	h = logging.LoggingMiddleware(h, a.Logger().LoggerFromContext("http-access"))
 
 	h = handlers.RecoveryHandler(handlers.RecoveryLogger(recoveryHandlerLogger{
-		writer: a.Logger(),
+		writer: a.Logger().LoggerFromContext("recovery-handler"),
 	}))(h)
 
 	a.Server().Handler = h
 }
 
 func NewApplication(version string) *application {
-	zerolog.TimeFieldFormat = time.RFC3339
-	logger := zerolog.New(os.Stdout).With().Timestamp().Logger()
-	db, err := database.NewDatabase(&logger)
+	loggingHandler := logging.NewHandler(os.Stdout, "application")
+	appLogCtx := loggingHandler.Context("application").Str("version", version)
+	loggingHandler.SetContext("application", &appLogCtx)
+
+	db, err := database.NewDatabase(loggingHandler.LoggerFromContext("database"))
 	if err != nil {
-		log.Fatal().Msgf("failed to connect to database: \"%v\"", err)
+		loggingHandler.Default().Fatal().Msgf("failed to connect to database: \"%v\"", err)
 	}
 
 	a := &application{
 		version:      version,
-		logger:       &logger,
+		logger:       loggingHandler,
 		shutdownWait: time.Minute,
 		db:           db,
 		server: &http.Server{
@@ -92,7 +93,11 @@ func NewApplication(version string) *application {
 			WriteTimeout: time.Second * 15,
 			ReadTimeout:  time.Second * 15,
 			IdleTimeout:  time.Second * 60,
-			ErrorLog:     goLog.New(logger, "http error:", goLog.Lmsgprefix|goLog.Llongfile),
+			ErrorLog: goLog.New(
+				loggingHandler.LoggerFromContext("http-error"),
+				"",
+				goLog.Lmsgprefix|goLog.Llongfile,
+			),
 		},
 	}
 	initHandler(a)
@@ -104,8 +109,12 @@ func (a *application) Server() *http.Server {
 	return a.server
 }
 
-func (a *application) Logger() *zerolog.Logger {
+func (a *application) Logger() *logging.LoggingHandler {
 	return a.logger
+}
+
+func (a *application) DefaultLogger() *zerolog.Logger {
+	return a.Logger().Default()
 }
 
 func (a *application) SetHttpServerAddress(addr string) {
@@ -127,10 +136,10 @@ func (a *application) Database() *database.Database {
 func (a *application) Start() {
 	go func() {
 		if err := a.Server().ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			a.Logger().Fatal().Msgf("failed to start application server: %v\n", err)
+			a.DefaultLogger().Fatal().Msgf("failed to start application server: %v\n", err)
 		}
 	}()
-	a.Logger().Info().Msg("http server started")
+	a.DefaultLogger().Info().Msg("http server started")
 }
 
 func (a *application) Stop() error {
@@ -138,9 +147,9 @@ func (a *application) Stop() error {
 	defer cancel()
 	err := a.Server().Shutdown(ctx)
 	if err != nil {
-		a.Logger().Error().Msgf("http server shutdown threw errors: %v\n", err)
+		a.DefaultLogger().Error().Msgf("http server shutdown threw errors: %v\n", err)
 		return err
 	}
-	a.Logger().Info().Msg("http server stopped")
+	a.DefaultLogger().Info().Msg("http server stopped")
 	return nil
 }
