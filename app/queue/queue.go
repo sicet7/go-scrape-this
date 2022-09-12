@@ -1,46 +1,30 @@
 package queue
 
 import (
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"sync"
+	"time"
 )
 
-// Job - interface for job processing
-type Job interface {
-	ID() uuid.UUID
-	Process(*zerolog.Logger)
-	Error(...interface{})
+type QueueStatus struct {
+	TotalWorkers  int `json:"total-workers"`
+	ActiveWorkers int `json:"active-workers"`
+	ReadyWorkers  int `json:"ready-workers"`
 }
 
-type WorkerState struct {
-	Id    int    `json:"worker-id,omitempty"`
-	State string `json:"state,omitempty"`
-	JobId string `json:"job-id,omitempty"`
-}
-
-// Worker - the worker threads that actually process the jobs
-type Worker struct {
-	done             *sync.WaitGroup
-	state            WorkerState
-	logger           *zerolog.Logger
-	readyPool        chan chan Job
-	assignedJobQueue chan Job
-	quit             chan bool
-}
-
-// JobQueue - a queue for enqueueing jobs to be processed
-type JobQueue struct {
+// Queue - a queue for enqueueing jobs to be processed
+type Queue struct {
 	internalQueue     chan Job
 	readyPool         chan chan Job
 	workers           []*Worker
 	dispatcherStopped *sync.WaitGroup
 	workersStopped    *sync.WaitGroup
 	quit              chan bool
+	shutdownTimeout   time.Duration
 }
 
-// NewJobQueue - creates a new job queue
-func NewJobQueue(maxWorkers int, logger *zerolog.Logger) *JobQueue {
+// NewQueue - creates a new job queue
+func NewQueue(maxWorkers int, shutdownTimeout time.Duration, logger *zerolog.Logger) *Queue {
 	workersStopped := sync.WaitGroup{}
 	readyPool := make(chan chan Job, maxWorkers)
 	workers := make([]*Worker, maxWorkers, maxWorkers)
@@ -49,18 +33,19 @@ func NewJobQueue(maxWorkers int, logger *zerolog.Logger) *JobQueue {
 		workers[i] = NewWorker(i, readyPool, &workersStopped, logger)
 		logger.Debug().Int("worker-id", i).Msg("initialized worker.")
 	}
-	return &JobQueue{
+	return &Queue{
 		internalQueue:     make(chan Job),
 		readyPool:         readyPool,
 		workers:           workers,
 		dispatcherStopped: &sync.WaitGroup{},
 		workersStopped:    &workersStopped,
 		quit:              make(chan bool),
+		shutdownTimeout:   shutdownTimeout,
 	}
 }
 
 // Start - starts the worker routines and dispatcher routine
-func (q *JobQueue) Start() {
+func (q *Queue) Start() {
 	for i := 0; i < len(q.workers); i++ {
 		q.workers[i].Start()
 	}
@@ -75,7 +60,9 @@ func (q *JobQueue) Start() {
 				for i := 0; i < len(q.workers); i++ {
 					q.workers[i].Stop()
 				}
-				q.workersStopped.Wait()
+				if waitTimeout(q.workersStopped, q.shutdownTimeout) {
+					panic("Failed to stop all queue workers within the timeout")
+				}
 				q.dispatcherStopped.Done()
 				return
 			}
@@ -84,94 +71,41 @@ func (q *JobQueue) Start() {
 }
 
 // Stop - stops the workers and dispatcher routine
-func (q *JobQueue) Stop() {
+func (q *Queue) Stop() {
 	q.quit <- true
 	q.dispatcherStopped.Wait()
 }
 
 // Submit - adds a new job to be processed
-func (q *JobQueue) Submit(job Job) {
+func (q *Queue) Submit(job Job) {
 	q.internalQueue <- job
 }
 
-// NewWorker - creates a new worker
-func NewWorker(id int, readyPool chan chan Job, done *sync.WaitGroup, logger *zerolog.Logger) *Worker {
-	return &Worker{
-		done:      done,
-		logger:    logger,
-		readyPool: readyPool,
-		state: WorkerState{
-			Id:    id,
-			State: "initialized",
-		},
-		assignedJobQueue: make(chan Job),
-		quit:             make(chan bool),
+// GetStates - returns the states of all the workers
+func (q *Queue) GetStates() []WorkerState {
+	output := []WorkerState{}
+	for i := 0; i < len(q.workers); i++ {
+		output = append(output, q.workers[i].State())
 	}
+	return output
 }
 
-func (w *Worker) HandleError(job Job) {
-	w.state = WorkerState{
-		Id:    w.state.Id,
-		State: "processed",
-		JobId: job.ID().String(),
-	}
-	if r := recover(); r != nil {
-		job.Error(r)
-		w.LogWithState().Error().Msgf("panicked while processing job. \"%v\"", r)
-		return
-	}
-	w.LogWithState().Info().Msg("worker processed job")
-}
-
-func (w *Worker) Process(job Job) {
-	w.state = WorkerState{
-		Id:    w.state.Id,
-		State: "processing",
-		JobId: job.ID().String(),
-	}
-	defer w.HandleError(job)
-	w.LogWithState().Info().Msg("worker processing job")
-	job.Process(w.LogWithState())
-}
-
-func (w *Worker) LogWithState() *zerolog.Logger {
-	l := w.logger.With().Interface("state", w.state).Logger()
-	return &l
-}
-
-// Start - begins the job processing loop for the worker
-func (w *Worker) Start() {
-	go func() {
-		w.done.Add(1)
-		w.state = WorkerState{
-			Id:    w.state.Id,
-			State: "starting",
+func (q *Queue) QueueStatus() QueueStatus {
+	totalWorkers := len(q.workers)
+	activeWorkers := 0
+	rdyWorkers := 0
+	for i := 0; i < len(q.workers); i++ {
+		state := q.workers[i].State()
+		if state.IsActive() {
+			activeWorkers++
 		}
-		w.LogWithState().Info().Msg("worker starting")
-		for {
-			w.readyPool <- w.assignedJobQueue // check the job queue in
-			w.state = WorkerState{
-				Id:    w.state.Id,
-				State: "pending",
-			}
-			w.LogWithState().Info().Msg("worker waiting for jobs")
-			select {
-			case job := <-w.assignedJobQueue: // see if anything has been assigned to the queue
-				w.Process(job)
-			case <-w.quit:
-				w.state = WorkerState{
-					Id:    w.state.Id,
-					State: "stopping",
-				}
-				w.LogWithState().Info().Msg("worker stopping")
-				w.done.Done()
-				return
-			}
+		if state.IsReady() {
+			rdyWorkers++
 		}
-	}()
-}
-
-// Stop - stops the worker
-func (w *Worker) Stop() {
-	w.quit <- true
+	}
+	return QueueStatus{
+		TotalWorkers:  totalWorkers,
+		ActiveWorkers: activeWorkers,
+		ReadyWorkers:  rdyWorkers,
+	}
 }
