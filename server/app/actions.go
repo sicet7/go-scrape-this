@@ -1,14 +1,14 @@
-package server
+package app
 
 import (
 	"encoding/json"
 	"github.com/google/uuid"
-	"github.com/sicet7/go-scrape-this/server/utilities"
+	"go-scrape-this/server/app/utils"
 	"net/http"
 	"runtime"
 )
 
-var memoryUsage = utilities.NewMemoryUsage()
+var memoryUsage = utils.NewMemoryUsage()
 
 func (a *Application) healthAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

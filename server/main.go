@@ -2,7 +2,7 @@ package main
 
 import (
 	"embed"
-	"github.com/sicet7/go-scrape-this/server"
+	"go-scrape-this/server/app"
 	"io/fs"
 	"net/http"
 	"os"
@@ -20,7 +20,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	application := server.NewApplication(version, http.FS(subFs))
+	application := app.NewApplication(version, http.FS(subFs))
 	application.Start()
 
 	c := make(chan os.Signal, 1)

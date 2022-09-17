@@ -13,5 +13,5 @@
     "baseUrl": ".",
     "checkJs": true
   },
-  "include": ["client/**/*.d.ts", "client/**/*.js", "client/**/*.svelte"]
+  "include": ["src/**/*.d.ts", "src/**/*.js", "src/**/*.svelte"]
 }

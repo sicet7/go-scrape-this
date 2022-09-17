@@ -1,6 +1,6 @@
-module github.com/sicet7/go-scrape-this
+module go-scrape-this/server
 
-go 1.18
+go 1.19
 
 require (
 	github.com/chromedp/chromedp v0.8.5
@@ -9,6 +9,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/rs/zerolog v1.15.0
 	github.com/samber/lo v1.27.1
+	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17
 	gorm.io/driver/mysql v1.3.6
 	gorm.io/driver/postgres v1.3.9
 	gorm.io/driver/sqlite v1.3.6
@@ -41,7 +42,6 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-sqlite3 v1.14.12 // indirect
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
-	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
 	golang.org/x/sys v0.0.0-20220825204002-c680a09ffe64 // indirect
 	golang.org/x/text v0.3.7 // indirect
 )

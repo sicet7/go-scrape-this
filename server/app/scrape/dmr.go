@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"github.com/chromedp/chromedp"
 	"github.com/samber/lo"
+	"time"
 )
 
 //go:embed ScrapeVehicle.js
@@ -15,9 +16,12 @@ func toBase64(b []byte) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-func ScrapeVehicle(searchType string, value string) (map[string]interface{}, error) {
+func ScrapeVehicle(searchType string, value string, timeout time.Duration) (map[string]interface{}, error) {
 
 	ctx, cancel := chromedp.NewContext(context.Background())
+	defer cancel()
+
+	ctx, cancel = context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	var output = map[string]interface{}{}

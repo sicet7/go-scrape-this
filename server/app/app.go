@@ -1,14 +1,14 @@
-package server
+package app
 
 import (
 	"context"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
-	"github.com/sicet7/go-scrape-this/server/database"
-	"github.com/sicet7/go-scrape-this/server/middleware"
-	"github.com/sicet7/go-scrape-this/server/queue"
-	"github.com/sicet7/go-scrape-this/server/utilities"
+	"go-scrape-this/server/app/database"
+	"go-scrape-this/server/app/middleware"
+	"go-scrape-this/server/app/queue"
+	"go-scrape-this/server/app/utils"
 	goLog "log"
 	"net/http"
 	"os"
@@ -36,42 +36,11 @@ func (h recoveryHandlerLogger) Println(v ...interface{}) {
 
 type Application struct {
 	logger       *LoggingHandler
-	mux          *mux.Router
-	server       *http.Server
-	db           *database.Database
+	server       http.Server
+	db           database.Database
 	queue        *queue.Queue
 	version      string
 	shutdownWait time.Duration
-}
-
-func initHandler(a *Application) *mux.Router {
-	r := mux.NewRouter()
-	r.HandleFunc("/api/health", a.healthAction).Methods("GET")
-	r.HandleFunc("/api/version", a.versionAction).Methods("GET")
-	r.HandleFunc("/api/status", a.statusAction).Methods("GET")
-	r.HandleFunc("/api/queue/work", a.queueWorkAction).Methods("GET")
-	r.HandleFunc("/api/queue/workers", a.workerListAction).Methods("GET")
-	return r
-}
-
-func initMiddleware(a *Application) {
-	h := a.Server().Handler
-
-	h = handlers.ContentTypeHandler(h, allowedContentTypes...)
-
-	if utilities.ReadBoolEnv("BEHIND_REVERSE_PROXY", false) {
-		h = handlers.ProxyHeaders(h)
-	}
-
-	h = handlers.CompressHandler(h)
-
-	h = middleware.LoggingMiddleware(h, a.Logger().LoggerFromContext("http-access"))
-
-	h = handlers.RecoveryHandler(handlers.RecoveryLogger(recoveryHandlerLogger{
-		writer: a.Logger().LoggerFromContext("recovery-handler"),
-	}))(h)
-
-	a.Server().Handler = h
 }
 
 func NewApplication(version string, filesystem http.FileSystem) *Application {
@@ -79,24 +48,24 @@ func NewApplication(version string, filesystem http.FileSystem) *Application {
 	appLogCtx := loggingHandler.Context("application").Str("version", version)
 	loggingHandler.SetContext("application", &appLogCtx)
 
-	httpAddressEnv := utilities.ReadStringEnv("HTTP_ADDR", "0.0.0.0:8080")
-	workerAmountEnv := utilities.ReadIntEnv("MAX_QUEUE_WORKERS", runtime.NumCPU())
-	shutdownWaitEnv := utilities.ReadIntEnv("SHUTDOWN_WAIT", 60)
+	httpAddressEnv := utils.ReadStringEnv("HTTP_ADDR", "0.0.0.0:8080")
+	workerAmountEnv := utils.ReadIntEnv("MAX_QUEUE_WORKERS", runtime.NumCPU())
+	shutdownWaitEnv := utils.ReadIntEnv("SHUTDOWN_WAIT", 60)
 
-	dbType, err := database.ParseDatabaseType(utilities.ReadStringEnv("DATABASE_TYPE", database.SQLITE.String()))
+	dbType, err := database.ParseDatabaseType(utils.ReadStringEnv("DATABASE_TYPE", database.SQLITE.String()))
 	if err != nil {
 		loggingHandler.Default().Fatal().Msgf("db type: \"%v\"", err)
 	}
 
 	var dsn string
 	if dbType != database.SQLITE {
-		dbDsn, err := utilities.RequireStringEnv("DATABASE_DSN")
+		dbDsn, err := utils.RequireStringEnv("DATABASE_DSN")
 		if err != nil {
 			loggingHandler.Default().Fatal().Msgf("environment: \"%v\"", err)
 		}
 		dsn = dbDsn
 	} else {
-		dsn = utilities.ReadStringEnv("DATABASE_DSN", "scraper.db")
+		dsn = utils.ReadStringEnv("DATABASE_DSN", "scraper.db")
 	}
 
 	db, err := database.NewDatabase(dbType, dsn, loggingHandler.LoggerFromContext("database"))
@@ -111,8 +80,12 @@ func NewApplication(version string, filesystem http.FileSystem) *Application {
 		logger:       loggingHandler,
 		shutdownWait: shutdownWait,
 		db:           db,
-		queue:        queue.NewQueue(workerAmountEnv, shutdownWait, loggingHandler.LoggerFromContext("queue")),
-		server: &http.Server{
+		queue: queue.NewQueue(
+			workerAmountEnv,
+			shutdownWait,
+			loggingHandler.LoggerFromContext("queue"),
+		),
+		server: http.Server{
 			Addr:         httpAddressEnv,
 			WriteTimeout: time.Second * 15,
 			ReadTimeout:  time.Second * 15,
@@ -124,17 +97,13 @@ func NewApplication(version string, filesystem http.FileSystem) *Application {
 			),
 		},
 	}
-	r := initHandler(a)
-	r.PathPrefix("/").Handler(middleware.StaticFileHandler{
-		Filesystem: filesystem,
-	})
-	a.Server().Handler = r
-	initMiddleware(a)
+	a.initHandlers(filesystem)
+	a.initMiddleware()
 	return a
 }
 
 func (a *Application) Server() *http.Server {
-	return a.server
+	return &a.server
 }
 
 func (a *Application) Logger() *LoggingHandler {
@@ -150,10 +119,14 @@ func (a *Application) Version() string {
 }
 
 func (a *Application) Database() *database.Database {
-	return a.db
+	return &a.db
 }
 
 func (a *Application) Start() {
+	err := a.Database().RunMigrations()
+	if err != nil {
+		a.DefaultLogger().Fatal().Msgf("failed to run database migrations: %v\n", err)
+	}
 	go func() {
 		if err := a.Server().ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			a.DefaultLogger().Fatal().Msgf("failed to start application server: %v\n", err)
@@ -161,6 +134,7 @@ func (a *Application) Start() {
 	}()
 	a.queue.Start()
 	a.DefaultLogger().Info().Msg("http server started")
+	//a.Database().GetConnection().
 }
 
 func (a *Application) Stop() {
@@ -172,4 +146,37 @@ func (a *Application) Stop() {
 	}
 	a.queue.Stop()
 	a.DefaultLogger().Info().Msg("http server stopped")
+}
+
+func (a *Application) initHandlers(filesystem http.FileSystem) {
+	r := mux.NewRouter()
+	r.HandleFunc("/api/health", a.healthAction).Methods("GET")
+	r.HandleFunc("/api/version", a.versionAction).Methods("GET")
+	r.HandleFunc("/api/status", a.statusAction).Methods("GET")
+	r.HandleFunc("/api/queue/work", a.queueWorkAction).Methods("GET")
+	r.HandleFunc("/api/queue/workers", a.workerListAction).Methods("GET")
+	r.PathPrefix("/").Handler(middleware.StaticFileHandler{
+		Filesystem: filesystem,
+	})
+	a.Server().Handler = r
+}
+
+func (a *Application) initMiddleware() {
+	h := a.Server().Handler
+
+	h = handlers.ContentTypeHandler(h, allowedContentTypes...)
+
+	if utils.ReadBoolEnv("BEHIND_REVERSE_PROXY", false) {
+		h = handlers.ProxyHeaders(h)
+	}
+
+	h = handlers.CompressHandler(h)
+
+	h = middleware.LoggingMiddleware(h, a.Logger().LoggerFromContext("http-access"))
+
+	h = handlers.RecoveryHandler(handlers.RecoveryLogger(recoveryHandlerLogger{
+		writer: a.Logger().LoggerFromContext("recovery-handler"),
+	}))(h)
+
+	a.Server().Handler = h
 }

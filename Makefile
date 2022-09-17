@@ -1,19 +1,31 @@
 VERSION = "0.0.0"
 
-main: dist
-	@go build -ldflags "-X main.version=${VERSION}" main.go
+app: server/server
+	@sh -c "cp server/server app"
 
-install:
-	@npm install
+server/server: server/dist
+	@sh -c "cd server && go build -ldflags \"-X main.version=${VERSION}\" -o server main.go && cd .."
 
-dist: install wasm
-	@npm run build --application_version=${VERSION}
+server/dist: client/dist
+	@sh -c "cp -r client/dist server/dist"
 
-wasm: wasm_js
-	@sh -c "GOOS=js GOARCH=wasm go build -ldflags \"-X main.version=${VERSION}\" -o public/module.wasm wasm.go"
+client/node_modules:
+	@npm install --prefix client
 
-wasm_js:
-	@cp "$$(go env GOROOT)/misc/wasm/wasm_exec.js" "public/wasm_exec.js"
+client/dist: client/node_modules client/public/wasm_exec.js client/public/module.wasm
+	@npm run build --prefix client --application_version=${VERSION}
+
+client/public/wasm_exec.js: wasm/wasm_exec.js
+	@sh -c "cp wasm/wasm_exec.js client/public/wasm_exec.js"
+
+client/public/module.wasm: wasm/module.wasm
+	@sh -c "cp wasm/module.wasm client/public/module.wasm"
+
+wasm/module.wasm:
+	@sh -c "cd wasm && GOOS=js GOARCH=wasm go build -ldflags \"-X main.version=${VERSION}\" -o module.wasm main.go && cd .."
+
+wasm/wasm_exec.js:
+	@cp "$$(go env GOROOT)/misc/wasm/wasm_exec.js" "wasm/wasm_exec.js"
 
 clean:
-	@rm -rf node_modules main dist public/wasm_exec.js public/module.wasm
+	@rm -rf server/dist client/node_modules client/dist client/public/wasm_exec.js client/public/module.wasm wasm/module.wasm wasm/wasm_exec.js server/server app

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"github.com/rs/zerolog"
+	"go-scrape-this/server/app/database/models"
+	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -18,33 +20,8 @@ type DatabaseType struct {
 	value string
 }
 
-var (
-	SQLITE     = &DatabaseType{value: "sqlite"}
-	MSSQL      = &DatabaseType{value: "mssql"}
-	POSTGRESQL = &DatabaseType{value: "pssql"}
-	MYSQL      = &DatabaseType{value: "mysql"}
-	supported  = []*DatabaseType{
-		SQLITE,
-		MSSQL,
-		POSTGRESQL,
-		MYSQL,
-	}
-)
-
 func (s DatabaseType) String() string {
 	return s.value
-}
-
-type Database struct {
-	conn *gorm.DB
-}
-
-func (d *Database) GetConnection() *gorm.DB {
-	return d.conn
-}
-
-func (d *Database) RunMigrations() {
-
 }
 
 func ParseDatabaseType(value string) (*DatabaseType, error) {
@@ -62,10 +39,30 @@ func ParseDatabaseType(value string) (*DatabaseType, error) {
 	return nil, errors.New("unknown or unsupported database type")
 }
 
-func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logger) (*Database, error) {
+var (
+	SQLITE     = &DatabaseType{value: "sqlite"}
+	MSSQL      = &DatabaseType{value: "mssql"}
+	POSTGRESQL = &DatabaseType{value: "pssql"}
+	MYSQL      = &DatabaseType{value: "mysql"}
+	supported  = []*DatabaseType{
+		SQLITE,
+		MSSQL,
+		POSTGRESQL,
+		MYSQL,
+	}
+	databaseModels = map[string]interface{}{
+		"user": models.User{},
+	}
+)
+
+type Database struct {
+	conn *gorm.DB
+}
+
+func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logger) (Database, error) {
 
 	if !slices.Contains(supported, dbType) {
-		return nil, errors.New("unknown or unsupported database type")
+		return Database{}, errors.New("unknown or unsupported database type")
 	}
 
 	gormLogging := gormLogger.New(providedLogger, gormLogger.Config{})
@@ -77,7 +74,7 @@ func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logge
 			Logger: gormLogging,
 		})
 		if err != nil {
-			return nil, err
+			return Database{}, err
 		}
 		connection = dbCon
 		break
@@ -89,7 +86,7 @@ func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logge
 			Logger: gormLogging,
 		})
 		if err != nil {
-			return nil, err
+			return Database{}, err
 		}
 		connection = dbCon
 		break
@@ -98,14 +95,14 @@ func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logge
 			Logger: gormLogging,
 		})
 		if err != nil {
-			return nil, err
+			return Database{}, err
 		}
 		connection = dbCon
 		break
 	case MYSQL:
 		sqlDB, err := sql.Open("mysql", dsn)
 		if err != nil {
-			return nil, err
+			return Database{}, err
 		}
 		dbCon, err := gorm.Open(mysql.New(mysql.Config{
 			Conn:              sqlDB,
@@ -114,19 +111,29 @@ func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logge
 			Logger: gormLogging,
 		})
 		if err != nil {
-			return nil, err
+			return Database{}, err
 		}
 		connection = dbCon
 		break
 	default:
-		return nil, errors.New("unknown or unsupported database type")
+		return Database{}, errors.New("unknown or unsupported database type")
 	}
 
-	db := &Database{
+	db := Database{
 		conn: connection,
 	}
 
-	db.RunMigrations()
-
 	return db, nil
+}
+
+func (d *Database) GetConnection() *gorm.DB {
+	return d.conn
+}
+
+func (d *Database) RunMigrations() error {
+	return d.conn.AutoMigrate(maps.Values(databaseModels)...)
+}
+
+func (d *Database) Model(name string) {
+	//d.GetConnection().Model()
 }
