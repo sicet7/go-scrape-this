@@ -1,14 +1,14 @@
-package app
+package server
 
 import (
 	"context"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
-	"github.com/sicet7/go-scrape-this/app/database"
-	"github.com/sicet7/go-scrape-this/app/logging"
-	"github.com/sicet7/go-scrape-this/app/queue"
-	"github.com/sicet7/go-scrape-this/app/utilities"
+	"github.com/sicet7/go-scrape-this/server/database"
+	"github.com/sicet7/go-scrape-this/server/middleware"
+	"github.com/sicet7/go-scrape-this/server/queue"
+	"github.com/sicet7/go-scrape-this/server/utilities"
 	goLog "log"
 	"net/http"
 	"os"
@@ -34,8 +34,8 @@ func (h recoveryHandlerLogger) Println(v ...interface{}) {
 	event.Msg("handled panic")
 }
 
-type application struct {
-	logger       *logging.LoggingHandler
+type Application struct {
+	logger       *LoggingHandler
 	mux          *mux.Router
 	server       *http.Server
 	db           *database.Database
@@ -44,17 +44,17 @@ type application struct {
 	shutdownWait time.Duration
 }
 
-func initHandler(a *application) {
+func initHandler(a *Application) *mux.Router {
 	r := mux.NewRouter()
 	r.HandleFunc("/api/health", a.healthAction).Methods("GET")
 	r.HandleFunc("/api/version", a.versionAction).Methods("GET")
 	r.HandleFunc("/api/status", a.statusAction).Methods("GET")
 	r.HandleFunc("/api/queue/work", a.queueWorkAction).Methods("GET")
 	r.HandleFunc("/api/queue/workers", a.workerListAction).Methods("GET")
-	a.Server().Handler = r
+	return r
 }
 
-func initMiddleware(a *application) {
+func initMiddleware(a *Application) {
 	h := a.Server().Handler
 
 	h = handlers.ContentTypeHandler(h, allowedContentTypes...)
@@ -65,7 +65,7 @@ func initMiddleware(a *application) {
 
 	h = handlers.CompressHandler(h)
 
-	h = logging.LoggingMiddleware(h, a.Logger().LoggerFromContext("http-access"))
+	h = middleware.LoggingMiddleware(h, a.Logger().LoggerFromContext("http-access"))
 
 	h = handlers.RecoveryHandler(handlers.RecoveryLogger(recoveryHandlerLogger{
 		writer: a.Logger().LoggerFromContext("recovery-handler"),
@@ -74,8 +74,8 @@ func initMiddleware(a *application) {
 	a.Server().Handler = h
 }
 
-func NewApplication(version string) *application {
-	loggingHandler := logging.NewHandler(os.Stdout, "application")
+func NewApplication(version string, filesystem http.FileSystem) *Application {
+	loggingHandler := NewLoggingHandler(os.Stdout, "application")
 	appLogCtx := loggingHandler.Context("application").Str("version", version)
 	loggingHandler.SetContext("application", &appLogCtx)
 
@@ -106,7 +106,7 @@ func NewApplication(version string) *application {
 
 	shutdownWait := time.Second * time.Duration(shutdownWaitEnv)
 
-	a := &application{
+	a := &Application{
 		version:      version,
 		logger:       loggingHandler,
 		shutdownWait: shutdownWait,
@@ -124,32 +124,36 @@ func NewApplication(version string) *application {
 			),
 		},
 	}
-	initHandler(a)
+	r := initHandler(a)
+	r.PathPrefix("/").Handler(middleware.StaticFileHandler{
+		Filesystem: filesystem,
+	})
+	a.Server().Handler = r
 	initMiddleware(a)
 	return a
 }
 
-func (a *application) Server() *http.Server {
+func (a *Application) Server() *http.Server {
 	return a.server
 }
 
-func (a *application) Logger() *logging.LoggingHandler {
+func (a *Application) Logger() *LoggingHandler {
 	return a.logger
 }
 
-func (a *application) DefaultLogger() *zerolog.Logger {
+func (a *Application) DefaultLogger() *zerolog.Logger {
 	return a.Logger().Default()
 }
 
-func (a *application) Version() string {
+func (a *Application) Version() string {
 	return a.version
 }
 
-func (a *application) Database() *database.Database {
+func (a *Application) Database() *database.Database {
 	return a.db
 }
 
-func (a *application) Start() {
+func (a *Application) Start() {
 	go func() {
 		if err := a.Server().ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			a.DefaultLogger().Fatal().Msgf("failed to start application server: %v\n", err)
@@ -159,7 +163,7 @@ func (a *application) Start() {
 	a.DefaultLogger().Info().Msg("http server started")
 }
 
-func (a *application) Stop() {
+func (a *Application) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), a.shutdownWait)
 	defer cancel()
 	err := a.Server().Shutdown(ctx)

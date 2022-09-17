@@ -1,4 +1,4 @@
-package logging
+package server
 
 import (
 	"github.com/rs/zerolog"
@@ -14,7 +14,7 @@ type LoggingHandler struct {
 	contextList    map[string]*zerolog.Context
 }
 
-func NewHandler(writer io.Writer, defaultContext string) *LoggingHandler {
+func NewLoggingHandler(writer io.Writer, defaultContext string) *LoggingHandler {
 	if zerolog.TimeFieldFormat != time.RFC3339 {
 		zerolog.TimeFieldFormat = time.RFC3339
 	}

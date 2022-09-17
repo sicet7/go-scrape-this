@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "moduleResolution": "Node",
+    "target": "ESNext",
+    "module": "ESNext",
+    "importsNotUsedAsValues": "error",
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "checkJs": true
+  },
+  "include": ["client/**/*.d.ts", "client/**/*.js", "client/**/*.svelte"]
+}

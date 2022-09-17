@@ -1,17 +1,26 @@
 package main
 
 import (
-	"github.com/sicet7/go-scrape-this/app"
+	"embed"
+	"github.com/sicet7/go-scrape-this/server"
+	"io/fs"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
-var version = "no version"
+var version = "0.0.0"
+
+//go:embed all:dist
+var content embed.FS
 
 func main() {
-	application := app.NewApplication(version)
-
+	subFs, err := fs.Sub(content, "dist")
+	if err != nil {
+		panic(err)
+	}
+	application := server.NewApplication(version, http.FS(subFs))
 	application.Start()
 
 	c := make(chan os.Signal, 1)

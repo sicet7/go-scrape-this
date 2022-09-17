@@ -1,16 +1,16 @@
-package app
+package server
 
 import (
 	"encoding/json"
 	"github.com/google/uuid"
-	"github.com/sicet7/go-scrape-this/app/utilities"
+	"github.com/sicet7/go-scrape-this/server/utilities"
 	"net/http"
 	"runtime"
 )
 
 var memoryUsage = utilities.NewMemoryUsage()
 
-func (a *application) healthAction(w http.ResponseWriter, r *http.Request) {
+func (a *Application) healthAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(map[string]string{
 		"status": "OK",
@@ -20,7 +20,7 @@ func (a *application) healthAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *application) versionAction(w http.ResponseWriter, r *http.Request) {
+func (a *Application) versionAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(map[string]string{
 		"version": a.Version(),
@@ -30,7 +30,7 @@ func (a *application) versionAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *application) statusAction(w http.ResponseWriter, r *http.Request) {
+func (a *Application) statusAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"queue-status": a.queue.QueueStatus(),
@@ -42,7 +42,7 @@ func (a *application) statusAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *application) workerListAction(w http.ResponseWriter, r *http.Request) {
+func (a *Application) workerListAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(a.queue.GetStates())
 	if err != nil {
@@ -50,7 +50,7 @@ func (a *application) workerListAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *application) queueWorkAction(w http.ResponseWriter, r *http.Request) {
+func (a *Application) queueWorkAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	job := TestJob{
 		Id:      uuid.New(),
