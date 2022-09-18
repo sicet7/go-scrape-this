@@ -50,13 +50,11 @@ var (
 		POSTGRESQL,
 		MYSQL,
 	}
-	databaseModels = map[string]interface{}{
-		"user": models.User{},
-	}
 )
 
 type Database struct {
-	conn *gorm.DB
+	conn           *gorm.DB
+	databaseModels map[string]interface{}
 }
 
 func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logger) (Database, error) {
@@ -121,6 +119,9 @@ func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logge
 
 	db := Database{
 		conn: connection,
+		databaseModels: map[string]interface{}{
+			"user": models.User{},
+		},
 	}
 
 	return db, nil
@@ -131,9 +132,9 @@ func (d *Database) GetConnection() *gorm.DB {
 }
 
 func (d *Database) RunMigrations() error {
-	return d.conn.AutoMigrate(maps.Values(databaseModels)...)
+	return d.conn.AutoMigrate(maps.Values(d.databaseModels)...)
 }
 
-func (d *Database) Model(name string) {
-	//d.GetConnection().Model()
-}
+//func (d *Database) Model(name string) *gorm.DB {
+//	d.GetConnection().Model()
+//}

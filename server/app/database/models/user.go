@@ -7,10 +7,11 @@ import (
 	"time"
 )
 
+// calibrate with: "docker run -it --rm --entrypoint kratos oryd/kratos:v0.5 hashers argon2 calibrate 1s"
 var passwordParams = structs.NewPasswordParams(
-	524288,
-	3,
-	4,
+	4194304,
+	1,
+	64,
 	16,
 	32,
 )
