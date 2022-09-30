@@ -17,9 +17,9 @@ var passwordParams = structs.NewPasswordParams(
 )
 
 type User struct {
-	ID        uuid.UUID            `gorm:"primaryKey,type:string,size:36,<-:create" json:"id"`
+	ID        uuid.UUID            `gorm:"primaryKey;type:string;size:36;<-:create" json:"id"`
 	Username  string               `gorm:"unique" json:"username"`
-	Password  structs.PasswordHash `gorm:"type:string" json:"-"`
+	Password  structs.PasswordHash `gorm:"type:string;size:200" json:"-"`
 	CreatedAt time.Time            `gorm:"autoCreateTime:milli" json:"created_at"`
 	UpdatedAt time.Time            `gorm:"autoUpdateTime:milli" json:"updated_at,omitempty"`
 	DeletedAt gorm.DeletedAt       `gorm:"index" json:"deleted_at,omitempty"`

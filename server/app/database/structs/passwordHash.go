@@ -1,6 +1,7 @@
 package structs
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -8,6 +9,8 @@ import (
 	"fmt"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/exp/rand"
+	"gorm.io/gorm/schema"
+	"reflect"
 	"strings"
 )
 
@@ -32,7 +35,7 @@ type PasswordHash struct {
 	params Params
 }
 
-func (h *PasswordHash) String() string {
+func (h PasswordHash) String() string {
 	b64Salt := base64.RawStdEncoding.EncodeToString(h.salt)
 	b64Hash := base64.RawStdEncoding.EncodeToString(h.hash)
 	return fmt.Sprintf(
@@ -62,11 +65,33 @@ func (h *PasswordHash) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (h *PasswordHash) Compare(otherHash PasswordHash) bool {
+func (h PasswordHash) MarshalJSON() ([]byte, error) {
+	return json.Marshal(h.String())
+}
+
+func (h *PasswordHash) Scan(ctx context.Context, field *schema.Field, dst reflect.Value, dbValue interface{}) (err error) {
+	switch value := dbValue.(type) {
+	case string:
+		val, err := LoadPasswordHash(value)
+		if err != nil {
+			return fmt.Errorf("load of password hash failed %#v", err)
+		}
+		*h = val
+	default:
+		return fmt.Errorf("unsupported data %#v", dbValue)
+	}
+	return nil
+}
+
+func (h PasswordHash) Value(ctx context.Context, field *schema.Field, dst reflect.Value, fieldValue interface{}) (interface{}, error) {
+	return h.String(), nil
+}
+
+func (h PasswordHash) Compare(otherHash PasswordHash) bool {
 	return subtle.ConstantTimeCompare(h.hash, otherHash.hash) == 1
 }
 
-func (h *PasswordHash) CompareHash(hash string) (bool, error) {
+func (h PasswordHash) CompareHash(hash string) (bool, error) {
 	password, err := LoadPasswordHash(hash)
 	if err != nil {
 		return false, err
@@ -74,7 +99,7 @@ func (h *PasswordHash) CompareHash(hash string) (bool, error) {
 	return h.Compare(password), nil
 }
 
-func (h *PasswordHash) ComparePlainText(plainText string) (bool, error) {
+func (h PasswordHash) ComparePlainText(plainText string) (bool, error) {
 	password, err := NewPasswordHash(plainText, h.params)
 	if err != nil {
 		return false, nil

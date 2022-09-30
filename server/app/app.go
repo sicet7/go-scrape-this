@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/zerolog"
 	"go-scrape-this/server/app/database"
+	"go-scrape-this/server/app/database/models"
 	"go-scrape-this/server/app/middleware"
 	"go-scrape-this/server/app/queue"
 	"go-scrape-this/server/app/utils"
@@ -134,7 +135,20 @@ func (a *Application) Start() {
 	}()
 	a.queue.Start()
 	a.DefaultLogger().Info().Msg("http server started")
-	//a.Database().GetConnection().
+	db := a.Database().Connection()
+	rootUser, err := models.NewUser("root", "root")
+	if err != nil {
+		a.DefaultLogger().Error().Msgf("failed to create root user: %v\n", err)
+	}
+	var user models.User
+	result := db.Where(models.User{Username: "root"}).Attrs(rootUser).FirstOrCreate(&user)
+	if result.Error != nil {
+		a.DefaultLogger().Error().Msgf("failed to create root user: %v\n", result.Error.Error())
+	} else {
+		if result.RowsAffected > 0 {
+			a.DefaultLogger().Info().Interface("User", user).Msg("root user created")
+		}
+	}
 }
 
 func (a *Application) Stop() {
@@ -150,11 +164,15 @@ func (a *Application) Stop() {
 
 func (a *Application) initHandlers(filesystem http.FileSystem) {
 	r := mux.NewRouter()
+
 	r.HandleFunc("/api/health", a.healthAction).Methods("GET")
 	r.HandleFunc("/api/version", a.versionAction).Methods("GET")
 	r.HandleFunc("/api/status", a.statusAction).Methods("GET")
-	r.HandleFunc("/api/queue/work", a.queueWorkAction).Methods("GET")
-	r.HandleFunc("/api/queue/workers", a.workerListAction).Methods("GET")
+
+	r.HandleFunc("/api/workers", a.workerListAction).Methods("GET")
+
+	r.HandleFunc("/api/users", a.userListAction).Methods("GET")
+
 	r.PathPrefix("/").Handler(middleware.StaticFileHandler{
 		Filesystem: filesystem,
 	})

@@ -2,7 +2,7 @@ package app
 
 import (
 	"encoding/json"
-	"github.com/google/uuid"
+	"go-scrape-this/server/app/database/models"
 	"go-scrape-this/server/app/utils"
 	"net/http"
 	"runtime"
@@ -50,14 +50,25 @@ func (a *Application) workerListAction(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *Application) queueWorkAction(w http.ResponseWriter, r *http.Request) {
+func (a *Application) userListAction(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	job := TestJob{
-		Id:      uuid.New(),
-		Message: "test",
+	limit := utils.GetIntOption(r, "limit", 10)
+	offset := utils.GetIntOption(r, "offset", 0)
+	if limit > 100 {
+		limit = 100
 	}
-	a.queue.Submit(job)
-	err := json.NewEncoder(w).Encode(job)
+	db := a.Database().Connection()
+	var users []models.User
+	var count int64
+	db.Model(models.User{}).Count(&count)
+	db.Limit(limit).Offset(offset).Find(&users)
+	err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"data":   users,
+		"total":  count,
+		"count":  len(users),
+		"offset": offset,
+		"limit":  limit,
+	})
 	if err != nil {
 		panic(err)
 	}

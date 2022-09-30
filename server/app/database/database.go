@@ -127,14 +127,10 @@ func NewDatabase(dbType *DatabaseType, dsn string, providedLogger *zerolog.Logge
 	return db, nil
 }
 
-func (d *Database) GetConnection() *gorm.DB {
+func (d *Database) Connection() *gorm.DB {
 	return d.conn
 }
 
 func (d *Database) RunMigrations() error {
 	return d.conn.AutoMigrate(maps.Values(d.databaseModels)...)
 }
-
-//func (d *Database) Model(name string) *gorm.DB {
-//	d.GetConnection().Model()
-//}
