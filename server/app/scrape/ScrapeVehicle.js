@@ -1,6 +1,6 @@
 (function(){
     let outputData = {};
-    let selectedTab = document.querySelectorAll('#visKTTabset .h-tab-btns li.selected span.title');
+    let selectedTab = document.querySelectorAll('.tabNav .h-tabs .h-tab-btns li.selected span.title');
     const findValueObject = (e) => {
         do {
             e = e.parentNode
